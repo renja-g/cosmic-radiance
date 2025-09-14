@@ -22,6 +22,12 @@ func (rb *RingBuffer) purge(nowTime time.Time) int {
 			return count
 		}
 
+		if req.IsCancelled() {
+			count++
+			rb.dequeue()
+			continue
+		}
+
 		if now < req.Expire {
 			return count
 		}
@@ -44,6 +50,11 @@ func (rb *RingBuffer) purgeAndPeek(nowTime time.Time) *request.Request {
 			return nil
 		}
 
+		if req.IsCancelled() {
+			rb.dequeue()
+			continue
+		}
+
 		if now < req.Expire {
 			return req
 		}
@@ -64,6 +75,10 @@ func (rb *RingBuffer) purgeAndDequeue(nowTime time.Time) *request.Request {
 		req := rb.dequeue()
 		if req == nil {
 			return nil
+		}
+
+		if req.IsCancelled() {
+			continue
 		}
 
 		if now < req.Expire {

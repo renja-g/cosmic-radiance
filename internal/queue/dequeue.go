@@ -55,6 +55,8 @@ func (rb *RingBuffer) Process(max int) {
 		req := rb.Dequeue(now)
 
 		if req == nil {
+			// No valid request available, so refund the reserved token
+			rb.Refund(keyId)
 			break
 		}
 

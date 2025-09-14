@@ -1,6 +1,9 @@
 package request
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 type Priority bool
 
@@ -11,8 +14,9 @@ const (
 )
 
 type Request struct {
-	Expire   int64 // Expiration timestamp in milliseconds
-	Response chan *ResponseChannel
+	Expire    int64 // Expiration timestamp in milliseconds
+	Response  chan *ResponseChannel
+	cancelled atomic.Bool
 }
 
 type ResponseChannel struct {
@@ -40,4 +44,18 @@ func (r *Request) FailedResponse(time *time.Time) {
 		Update:     false,
 		RetryAfter: time,
 	}
+}
+
+/*
+Cancel marks this request as cancelled. Queues should drop cancelled requests.
+*/
+func (r *Request) Cancel() {
+	r.cancelled.Store(true)
+}
+
+/*
+IsCancelled reports whether this request was cancelled by the client.
+*/
+func (r *Request) IsCancelled() bool {
+	return r.cancelled.Load()
 }

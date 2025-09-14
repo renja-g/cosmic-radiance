@@ -70,19 +70,25 @@ func (rl *RateLimiter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), configs.Timeout+5*time.Second)
 	defer cancel()
 
+	var keyAssigned int = request.RequestFailed
+
 	select {
 	case <-r.Context().Done():
+		// client disconnected
+		req.Cancel()
 		if configs.PrometheusEnabled {
 			metrics.UpdateResponseCodes(-1, syntax.Platform, syntax.Endpoint, 499)
 		}
 	case <-ctx.Done():
-		// fmt.Println("ctx cancelled")
+		// server side timeout before we received a key
+		req.Cancel()
 		http.Error(w, "Request dropped due to timeout", http.StatusTooManyRequests)
 		if configs.PrometheusEnabled {
 			metrics.UpdateResponseCodes(-1, syntax.Platform, syntax.Endpoint, 408)
 		}
 	case response := <-req.Response:
 
+		keyAssigned = response.KeyId
 		if response.KeyId == request.RequestFailed {
 			if response.RetryAfter != nil {
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(time.Until(*response.RetryAfter).Round(time.Second).Seconds())))
@@ -138,6 +144,19 @@ func (rl *RateLimiter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(w, riotApiRequest.Body); err != nil {
 			log.Printf("Error writing response: %v", err)
 		}
+	}
+
+	// If the client disconnected or we timed out after key assignment, refund the key
+	select {
+	case <-r.Context().Done():
+		if keyAssigned >= 0 {
+			rl.refundRequest(syntax, priority, keyAssigned)
+		}
+	case <-ctx.Done():
+		if keyAssigned >= 0 {
+			rl.refundRequest(syntax, priority, keyAssigned)
+		}
+	default:
 	}
 }
 
